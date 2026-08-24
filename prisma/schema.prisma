@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+// ======================================================
+// ORGANIZATION
+// ======================================================
+
+model Organization {
+  id        Int       @id @default(autoincrement())
+  name      String    @db.VarChar(150)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  laboratories Laboratory[]
+  users        User[]
+
+  @@map("organizations")
+}
+
+
+// ======================================================
+// LABORATORY
+// ======================================================
+
+model Laboratory {
+  id             Int       @id @default(autoincrement())
+  organizationId Int       @map("organization_id")
+  name           String    @db.VarChar(150)
+  description    String?
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  storageLocations StorageLocation[]
+  samples          Sample[]
+  alerts           Alert[]
+
+  @@map("laboratories")
+}
+
+
+// ======================================================
+// MATERIAL TYPE
+// ======================================================
+
+model MaterialType {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique(map: "uq_material_types_name") @db.VarChar(100)
+  description String?
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  samples Sample[]
+
+  @@map("material_types")
+}
+
+
+// ======================================================
+// STORAGE LOCATION
+// ======================================================
+
+model StorageLocation {
+  id           Int       @id @default(autoincrement())
+  laboratoryId Int       @map("laboratory_id")
+
+  code        String  @db.VarChar(50)
+  name        String  @db.VarChar(255)
+  type        String  @db.VarChar(100)
+  description String?
+
+  maxVolumeCm3 Decimal? @map("max_volume_cm3") @db.Decimal(12, 2)
+  maxAreaCm2   Decimal? @map("max_area_cm2") @db.Decimal(12, 2)
+  maxWeightG   Decimal? @map("max_weight_g") @db.Decimal(12, 2)
+
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  laboratory Laboratory @relation(fields: [laboratoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  samples Sample[]
+  alerts  Alert[]
+
+  movementsFrom SampleMovement[] @relation("MovementFromLocation")
+  movementsTo   SampleMovement[] @relation("MovementToLocation")
+
+  @@unique([laboratoryId, code], map: "uq_storage_locations_laboratory_code")
+  @@map("storage_locations")
+}
+
+
+// ======================================================
+// SAMPLE
+// ======================================================
+
+model Sample {
+  id                Int  @id @default(autoincrement())
+  laboratoryId      Int  @map("laboratory_id")
+  storageLocationId Int? @map("storage_location_id")
+  materialTypeId    Int  @map("material_type_id")
+
+  name        String  @db.VarChar(150)
+  code        String  @db.VarChar(100)
+  description String?
+
+  weightG   Decimal @map("weight_g") @db.Decimal(12, 2)
+  volumeCm3 Decimal @map("volume_cm3") @db.Decimal(12, 2)
+  areaCm2   Decimal @map("area_cm2") @db.Decimal(12, 2)
+
+  status         SampleStatus @default(ACTIVE)
+  entryDate      DateTime     @default(dbgenerated("CURRENT_DATE")) @map("entry_date") @db.Date
+  expirationDate DateTime?    @map("expiration_date") @db.Date
+
+  isStackable             Boolean @default(false) @map("is_stackable")
+  maxStackUnits           Int?    @map("max_stack_units")
+  requiresColdStorage     Boolean @default(false) @map("requires_cold_storage")
+  requiresLightProtection Boolean @default(false) @map("requires_light_protection")
+  isHazardous             Boolean @default(false) @map("is_hazardous")
+
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  laboratory      Laboratory       @relation(fields: [laboratoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  materialType    MaterialType     @relation(fields: [materialTypeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  movements SampleMovement[]
+  alerts    Alert[]
+
+  @@unique([laboratoryId, code], map: "uq_samples_laboratory_code")
+  @@map("samples")
+}
+
+
+// ======================================================
+// SAMPLE MOVEMENT
+// ======================================================
+
+model SampleMovement {
+  id                Int      @id @default(autoincrement())
+  sampleId          Int      @map("sample_id")
+  fromLocationId    Int?     @map("from_location_id")
+  toLocationId      Int?     @map("to_location_id")
+  movementType      String   @map("movement_type") @db.VarChar(50)
+  notes             String?
+  performedByUserId Int?     @map("performed_by_user_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  sample       Sample           @relation(fields: [sampleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  fromLocation StorageLocation? @relation("MovementFromLocation", fields: [fromLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  toLocation   StorageLocation? @relation("MovementToLocation", fields: [toLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  performedBy  User?            @relation(fields: [performedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@map("sample_movements")
+}
+
+
+// ======================================================
+// ALERT
+// ======================================================
+
+model Alert {
+  id                Int  @id @default(autoincrement())
+  laboratoryId      Int? @map("laboratory_id")
+  storageLocationId Int? @map("storage_location_id")
+  sampleId          Int? @map("sample_id")
+
+  alertType String @map("alert_type") @db.VarChar(50)
+  severity  String @default("MEDIUM") @db.VarChar(20)
+  message   String
+
+  isResolved Boolean   @default(false) @map("is_resolved")
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamp(6)
+
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  laboratory      Laboratory?      @relation(fields: [laboratoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sample          Sample?          @relation(fields: [sampleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  userAlerts UserAlert[]
+
+  @@map("alerts")
+}
+
+
+// ======================================================
+// USER
+// ======================================================
+
+model User {
+  id             Int     @id @default(autoincrement())
+  auth0Id        String  @unique(map: "users_auth0_id_unique") @map("auth0_id") @db.VarChar(255)
+  organizationId Int?    @map("organization_id")
+  fullName       String  @map("full_name") @db.VarChar(150)
+  email          String  @unique(map: "users_email_unique") @db.VarChar(150)
+  role           String? @default("TECHNICIAN") @db.VarChar(50)
+
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  movements  SampleMovement[]
+  userAlerts UserAlert[]
+
+  @@map("users")
+}
+
+
+// ======================================================
+// USER ALERT
+// ======================================================
+
+model UserAlert {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  alertId   Int       @map("alert_id")
+  isRead    Boolean   @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at") @db.Timestamp(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, alertId], map: "uq_user_alerts_user_alert")
+  @@map("user_alerts")
+}
+
+
+// ======================================================
+// ENUMS
+// ======================================================
+
+enum SampleStatus {
+  ACTIVE
+  ARCHIVED
+  DISCARDED
+  EXPIRED
+
+  @@map("sample_status")
+}
