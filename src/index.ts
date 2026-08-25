@@ -89,6 +89,8 @@ const main = async () => {
         resolvers: userAlertResolvers,
       },
     ]),
+
+    introspection: true,
   });
 
   const { url } = await startStandaloneServer(server, {
