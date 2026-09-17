@@ -201,14 +201,19 @@ model User {
   id             Int     @id @default(autoincrement())
   auth0Id        String  @unique(map: "users_auth0_id_unique") @map("auth0_id") @db.VarChar(255)
   organizationId Int?    @map("organization_id")
-  fullName       String  @map("full_name") @db.VarChar(150)
+  fullName       String? @map("full_name") @db.VarChar(150)
   email          String  @unique(map: "users_email_unique") @db.VarChar(150)
   role           String? @default("TECHNICIAN") @db.VarChar(50)
 
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization Organization? @relation(
+    fields: [organizationId],
+    references: [id],
+    onDelete: Cascade,
+    onUpdate: NoAction
+  )
 
   movements  SampleMovement[]
   userAlerts UserAlert[]

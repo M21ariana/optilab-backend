@@ -4,12 +4,16 @@ type db = PrismaClient;
 
 interface Context {
   db: db;
+
   token?: string;
+
   origin?: string;
+
   ip?: string;
+
   user?: {
     id: number;
-    auth0Id?: string;
+    auth0Id: string;
   };
 }
 

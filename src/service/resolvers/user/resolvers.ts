@@ -1,5 +1,7 @@
 import { Resolver } from "../../types";
+
 import { userDataLoader } from "./dataLoaders";
+
 import { getWhereInUsers } from "./transformations";
 
 const userResolvers: Resolver = {
@@ -40,6 +42,32 @@ const userResolvers: Resolver = {
   },
 
   Query: {
+    // ======================================================
+    // CURRENT AUTHENTICATED USER
+    // ======================================================
+
+    me: async (
+      parent,
+      args,
+      { db, user }
+    ) => {
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      return await db.user.findUnique({
+        where: {
+          id: user.id,
+        },
+      });
+    },
+
+    // ======================================================
+    // USERS
+    // ======================================================
+
     users: async (
       parent,
       args,
@@ -58,11 +86,15 @@ const userResolvers: Resolver = {
             where,
 
             ...(args?.take
-              ? { take: args.take }
+              ? {
+                  take: args.take,
+                }
               : {}),
 
             ...(args?.skip
-              ? { skip: args.skip }
+              ? {
+                  skip: args.skip,
+                }
               : {}),
 
             ...(args?.orderBy
@@ -114,6 +146,51 @@ const userResolvers: Resolver = {
   },
 
   Mutation: {
+    // ======================================================
+    // CURRENT AUTHENTICATED USER
+    // ======================================================
+
+    updateMyProfile: async (
+      parent,
+      args,
+      { db, user }
+    ) => {
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      const fullName =
+        args.fullName?.trim();
+
+      if (!fullName) {
+        throw new Error(
+          "Full name is required."
+        );
+      }
+
+      if (fullName.length > 150) {
+        throw new Error(
+          "Full name cannot exceed 150 characters."
+        );
+      }
+
+      return await db.user.update({
+        where: {
+          id: user.id,
+        },
+
+        data: {
+          fullName,
+        },
+      });
+    },
+
+    // ======================================================
+    // USERS
+    // ======================================================
+
     createUser: async (
       parent,
       args,

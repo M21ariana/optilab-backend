@@ -7,7 +7,7 @@ const userType = gql`
     id: ID!
     auth0Id: String!
     organizationId: Int
-    fullName: String!
+    fullName: String
     email: String!
     role: String
     createdAt: Date
@@ -29,7 +29,7 @@ const userType = gql`
   input UserCreateInput {
     auth0Id: String!
     organizationId: Int
-    fullName: String!
+    fullName: String
     email: String!
     role: String
   }
@@ -75,6 +75,18 @@ const userType = gql`
     role
     createdAt
     updatedAt
+  }
+
+  # --------------------------
+  # Current authenticated user
+  # --------------------------
+
+  extend type Query {
+    me: User
+  }
+
+  extend type Mutation {
+    updateMyProfile(fullName: String!): User!
   }
 `;
 

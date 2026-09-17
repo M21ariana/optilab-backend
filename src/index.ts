@@ -5,6 +5,7 @@ import { startStandaloneServer } from "@apollo/server/standalone";
 import { buildSubgraphSchema } from "@apollo/subgraph";
 
 import { getDB } from "./service/db";
+import { verifyAccessToken } from "./service/auth/auth0";
 
 import { generalTypes } from "./service/resolvers/general/types";
 
@@ -43,47 +44,38 @@ const main = async () => {
       {
         typeDefs: generalTypes,
       },
-
       {
         typeDefs: organizationType,
         resolvers: organizationResolvers,
       },
-
       {
         typeDefs: laboratoryType,
         resolvers: laboratoryResolvers,
       },
-
       {
         typeDefs: materialTypeType,
         resolvers: materialTypeResolvers,
       },
-
       {
         typeDefs: storageLocationType,
         resolvers: storageLocationResolvers,
       },
-
       {
         typeDefs: userType,
         resolvers: userResolvers,
       },
-
       {
         typeDefs: sampleType,
         resolvers: sampleResolvers,
       },
-
       {
         typeDefs: sampleMovementType,
         resolvers: sampleMovementResolvers,
       },
-
       {
         typeDefs: alertType,
         resolvers: alertResolvers,
       },
-
       {
         typeDefs: userAlertType,
         resolvers: userAlertResolvers,
@@ -93,36 +85,70 @@ const main = async () => {
     introspection: true,
   });
 
-  const { url } = await startStandaloneServer(server, {
-    context: async ({ req }) => {
-      const authorization =
-        req.headers.authorization;
+  const { url } = await startStandaloneServer(
+    server,
+    {
+      context: async ({ req }) => {
+        const authorization =
+          req.headers.authorization;
 
-      const token = Array.isArray(authorization)
-        ? authorization[0]
-        : authorization;
+        const token = Array.isArray(
+          authorization
+        )
+          ? authorization[0]
+          : authorization;
 
-      const origin =
-        req.headers.origin;
+        const origin = req.headers.origin;
 
-      const ip =
-        req.socket?.remoteAddress ||
-        "unknown";
+        const ip =
+          req.socket?.remoteAddress ||
+          "unknown";
 
-      return {
-        db,
-        token,
-        origin,
-        ip,
-      };
-    },
+        let user:
+          | {
+              id: number;
+              auth0Id: string;
+            }
+          | undefined;
 
-    listen: {
-      port:
-        Number(process.env.PORT) ||
-        4000,
-    },
-  });
+        if (token) {
+          const identity =
+            await verifyAccessToken(token);
+
+          if (identity) {
+            const databaseUser =
+              await db.user.findUnique({
+                where: {
+                  auth0Id: identity.sub,
+                },
+                select: {
+                  id: true,
+                  auth0Id: true,
+                },
+              });
+
+            if (databaseUser) {
+              user = databaseUser;
+            }
+          }
+        }
+
+        return {
+          db,
+          token,
+          origin,
+          ip,
+          user,
+        };
+      },
+
+      listen: {
+        port:
+          Number(process.env.PORT) ||
+          4000,
+      },
+    }
+  );
 
   console.log(
     `🚀 OptiLab Server ready at ${url}`
@@ -133,6 +159,5 @@ main().catch((error) => {
   console.error(
     "❌ Error starting OptiLab Server:"
   );
-
   console.error(error);
 });
