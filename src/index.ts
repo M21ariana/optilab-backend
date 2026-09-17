@@ -5,7 +5,11 @@ import { startStandaloneServer } from "@apollo/server/standalone";
 import { buildSubgraphSchema } from "@apollo/subgraph";
 
 import { getDB } from "./service/db";
-import { verifyAccessToken } from "./service/auth/auth0";
+
+import {
+  getAuth0UserInfo,
+  verifyAccessToken,
+} from "./service/auth/auth0";
 
 import { generalTypes } from "./service/resolvers/general/types";
 
@@ -112,11 +116,13 @@ const main = async () => {
           | undefined;
 
         if (token) {
+          // Validate the Auth0 access token
           const identity =
             await verifyAccessToken(token);
 
           if (identity) {
-            const databaseUser =
+            // First, try to find an existing OptiLab user
+            let databaseUser =
               await db.user.findUnique({
                 where: {
                   auth0Id: identity.sub,
@@ -127,9 +133,86 @@ const main = async () => {
                 },
               });
 
-            if (databaseUser) {
-              user = databaseUser;
+            // If the Auth0 user does not exist
+            // in OptiLab yet, provision it.
+            if (!databaseUser) {
+              const auth0User =
+                await getAuth0UserInfo(
+                  token
+                );
+
+              if (!auth0User) {
+                throw new Error(
+                  "Could not retrieve the authenticated Auth0 user."
+                );
+              }
+
+              // Make sure /userinfo belongs
+              // to the same authenticated identity.
+              if (
+                auth0User.sub !==
+                identity.sub
+              ) {
+                throw new Error(
+                  "Auth0 user identity does not match the access token."
+                );
+              }
+
+              if (!auth0User.email) {
+                throw new Error(
+                  "The authenticated Auth0 user does not have an email address."
+                );
+              }
+
+              // Do not automatically link an
+              // existing account by email.
+              const existingUserByEmail =
+                await db.user.findUnique({
+                  where: {
+                    email:
+                      auth0User.email,
+                  },
+                  select: {
+                    id: true,
+                    auth0Id: true,
+                  },
+                });
+
+              if (existingUserByEmail) {
+                throw new Error(
+                  "A user with this email already exists in OptiLab but is linked to a different authentication identity."
+                );
+              }
+
+              // Create the OptiLab user
+              databaseUser =
+                await db.user.create({
+                  data: {
+                    auth0Id:
+                      identity.sub,
+
+                    email:
+                      auth0User.email,
+
+                    fullName:
+                      auth0User.name?.trim() ||
+                      null,
+
+                    role: "TECHNICIAN",
+
+                    organizationId: null,
+                  },
+
+                  select: {
+                    id: true,
+                    auth0Id: true,
+                  },
+                });
             }
+
+            // The authenticated OptiLab user
+            // is now available to resolvers.
+            user = databaseUser;
           }
         }
 
@@ -159,5 +242,6 @@ main().catch((error) => {
   console.error(
     "❌ Error starting OptiLab Server:"
   );
+
   console.error(error);
 });

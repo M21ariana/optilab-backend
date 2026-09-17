@@ -22,11 +22,13 @@ const getAuth0Config = () => {
   const issuer = `https://${domain}/`;
 
   return {
+    domain,
     audience,
     issuer,
     jwksUrl: new URL(
       `${issuer}.well-known/jwks.json`
     ),
+    userInfoUrl: `${issuer}userinfo`,
   };
 };
 
@@ -44,9 +46,9 @@ const getJwks = () => {
   return jwks;
 };
 
-export async function verifyAccessToken(
+const extractBearerToken = (
   authorizationHeader?: string
-) {
+): string | null => {
   if (!authorizationHeader) {
     return null;
   }
@@ -61,6 +63,20 @@ export async function verifyAccessToken(
     throw new Error(
       "Invalid Authorization header."
     );
+  }
+
+  return token;
+};
+
+export async function verifyAccessToken(
+  authorizationHeader?: string
+) {
+  const token = extractBearerToken(
+    authorizationHeader
+  );
+
+  if (!token) {
+    return null;
   }
 
   const { issuer, audience } =
@@ -85,4 +101,54 @@ export async function verifyAccessToken(
   return {
     sub: payload.sub,
   };
+}
+
+type Auth0UserInfo = {
+  sub: string;
+  email?: string;
+  name?: string;
+};
+
+export async function getAuth0UserInfo(
+  authorizationHeader?: string
+): Promise<Auth0UserInfo | null> {
+  const token = extractBearerToken(
+    authorizationHeader
+  );
+
+  if (!token) {
+    return null;
+  }
+
+  const { userInfoUrl } =
+    getAuth0Config();
+
+  const response = await fetch(
+    userInfoUrl,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+
+    throw new Error(
+      `Auth0 userinfo request failed with status ${response.status}: ${body}`
+    );
+  }
+
+  const userInfo =
+    (await response.json()) as Auth0UserInfo;
+
+  if (!userInfo.sub) {
+    throw new Error(
+      "Auth0 userinfo response does not contain a subject."
+    );
+  }
+
+  return userInfo;
 }
