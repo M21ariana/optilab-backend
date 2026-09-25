@@ -96,6 +96,8 @@ const sampleType = gql`
     requiresColdStorage: Boolean
     requiresLightProtection: Boolean
     isHazardous: Boolean
+
+    movementReason: String
   }
 
   input SampleWhereFilterInput {

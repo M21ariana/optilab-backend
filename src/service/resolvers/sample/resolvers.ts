@@ -175,33 +175,138 @@ const sampleResolvers: Resolver = {
     updateSample: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.sample.update({
-        where: {
-          id: Number(args.where.id),
-        },
+      const sampleId = Number(
+        args.where.id
+      );
 
-        data: {
-          ...args.data,
+      // ----------------------------------------
+      // GET CURRENT SAMPLE
+      // ----------------------------------------
 
-          ...(args.data.entryDate
-            ? {
-              entryDate:
-                new Date(args.data.entryDate),
-            }
-            : {}),
+      const currentSample =
+        await db.sample.findUnique({
+          where: {
+            id: sampleId,
+          },
+        });
 
-          ...(args.data.expirationDate
-            ? {
-              expirationDate:
-                new Date(
-                  args.data.expirationDate
-                ),
-            }
-            : {}),
-        },
-      });
+      if (!currentSample) {
+        throw new Error(
+          "Sample not found."
+        );
+      }
+
+      // ----------------------------------------
+      // SEPARATE AUXILIARY DATA
+      // ----------------------------------------
+
+      const {
+        movementReason,
+        ...sampleData
+      } = args.data;
+
+      // ----------------------------------------
+      // DETECT LOCATION CHANGE
+      // ----------------------------------------
+
+      const hasLocationUpdate =
+        sampleData.storageLocationId !==
+        undefined;
+
+      const newLocationId =
+        hasLocationUpdate
+          ? sampleData.storageLocationId
+          : currentSample.storageLocationId;
+
+      const locationChanged =
+        hasLocationUpdate &&
+        newLocationId !==
+        currentSample.storageLocationId;
+
+      // ----------------------------------------
+      // REQUIRE MOVEMENT REASON
+      // ----------------------------------------
+
+      if (
+        locationChanged &&
+        !movementReason?.trim()
+      ) {
+        throw new Error(
+          "A movement reason is required when changing the sample location."
+        );
+      }
+
+      // ----------------------------------------
+      // TRANSACTION
+      // ----------------------------------------
+
+      return await db.$transaction(
+        async (tx) => {
+          // ------------------------------------
+          // UPDATE SAMPLE
+          // ------------------------------------
+
+          const updatedSample =
+            await tx.sample.update({
+              where: {
+                id: sampleId,
+              },
+
+              data: {
+                ...sampleData,
+
+                ...(sampleData.entryDate
+                  ? {
+                    entryDate:
+                      new Date(
+                        sampleData.entryDate
+                      ),
+                  }
+                  : {}),
+
+                ...(sampleData.expirationDate
+                  ? {
+                    expirationDate:
+                      new Date(
+                        sampleData.expirationDate
+                      ),
+                  }
+                  : {}),
+              },
+            });
+
+          // ------------------------------------
+          // CREATE MOVEMENT IF LOCATION CHANGED
+          // ------------------------------------
+
+          if (locationChanged) {
+            await tx.sampleMovement.create({
+              data: {
+                sampleId,
+
+                fromLocationId:
+                  currentSample.storageLocationId,
+
+                toLocationId:
+                  newLocationId ?? null,
+
+                movementType:
+                  "RELOCATION",
+
+                notes:
+                  movementReason.trim(),
+
+                performedByUserId:
+                  user?.id ?? null,
+              },
+            });
+          }
+
+          return updatedSample;
+        }
+      );
     },
 
     upsertSample: async (
