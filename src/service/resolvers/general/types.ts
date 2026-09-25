@@ -404,6 +404,10 @@ const generalTypes = gql`
       id: Int!
     ): Sample
 
+    recommendedStorageLocations(
+      sampleId: Int!
+    ): [StorageRecommendation!]!
+
 
     # ------------------------------------------------------
     # SampleMovement

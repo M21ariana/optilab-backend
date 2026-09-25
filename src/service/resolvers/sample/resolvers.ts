@@ -1,6 +1,7 @@
 import { Resolver } from "../../types";
 import { sampleDataLoader } from "./dataLoaders";
 import { getWhereInSamples } from "./transformations";
+import { recommendStorageLocationsForSample } from "../../storageRecommendation/service";
 
 const sampleResolvers: Resolver = {
   Sample: {
@@ -86,11 +87,11 @@ const sampleResolvers: Resolver = {
 
           ...(args?.orderBy
             ? {
-                orderBy: {
-                  [args.orderBy.field]:
-                    args.orderBy.value,
-                },
-              }
+              orderBy: {
+                [args.orderBy.field]:
+                  args.orderBy.value,
+              },
+            }
             : {}),
         });
 
@@ -129,6 +130,17 @@ const sampleResolvers: Resolver = {
         },
       });
     },
+
+    recommendedStorageLocations: async (
+      parent,
+      args,
+      { db }
+    ) => {
+      return await recommendStorageLocationsForSample(
+        db,
+        Number(args.sampleId)
+      );
+    },
   },
 
   Mutation: {
@@ -143,18 +155,18 @@ const sampleResolvers: Resolver = {
 
           ...(args.data.entryDate
             ? {
-                entryDate:
-                  new Date(args.data.entryDate),
-              }
+              entryDate:
+                new Date(args.data.entryDate),
+            }
             : {}),
 
           ...(args.data.expirationDate
             ? {
-                expirationDate:
-                  new Date(
-                    args.data.expirationDate
-                  ),
-              }
+              expirationDate:
+                new Date(
+                  args.data.expirationDate
+                ),
+            }
             : {}),
         },
       });
@@ -175,18 +187,18 @@ const sampleResolvers: Resolver = {
 
           ...(args.data.entryDate
             ? {
-                entryDate:
-                  new Date(args.data.entryDate),
-              }
+              entryDate:
+                new Date(args.data.entryDate),
+            }
             : {}),
 
           ...(args.data.expirationDate
             ? {
-                expirationDate:
-                  new Date(
-                    args.data.expirationDate
-                  ),
-              }
+              expirationDate:
+                new Date(
+                  args.data.expirationDate
+                ),
+            }
             : {}),
         },
       });
@@ -202,18 +214,18 @@ const sampleResolvers: Resolver = {
 
         ...(args.data.entryDate
           ? {
-              entryDate:
-                new Date(args.data.entryDate),
-            }
+            entryDate:
+              new Date(args.data.entryDate),
+          }
           : {}),
 
         ...(args.data.expirationDate
           ? {
-              expirationDate:
-                new Date(
-                  args.data.expirationDate
-                ),
-            }
+            expirationDate:
+              new Date(
+                args.data.expirationDate
+              ),
+          }
           : {}),
       };
 

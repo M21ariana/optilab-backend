@@ -81,6 +81,10 @@ model StorageLocation {
   maxAreaCm2   Decimal? @map("max_area_cm2") @db.Decimal(12, 2)
   maxWeightG   Decimal? @map("max_weight_g") @db.Decimal(12, 2)
 
+  supportsColdStorage     Boolean @default(false) @map("supports_cold_storage")
+  supportsLightProtection Boolean @default(false) @map("supports_light_protection")
+  supportsHazardous       Boolean @default(false) @map("supports_hazardous")
+
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
 

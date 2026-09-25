@@ -16,6 +16,10 @@ const storageLocationType = gql`
     maxAreaCm2: Float
     maxWeightG: Float
 
+    supportsColdStorage: Boolean!
+    supportsLightProtection: Boolean!
+    supportsHazardous: Boolean!
+
     createdAt: Date
     updatedAt: Date
 
@@ -26,6 +30,18 @@ const storageLocationType = gql`
     movementsFrom: [SampleMovement!]
     movementsTo: [SampleMovement!]
   }
+
+  type StorageRecommendation {
+    storageLocation: StorageLocation!
+
+    score: Float!
+
+    availableWeightG: Float
+    availableVolumeCm3: Float
+    availableAreaCm2: Float
+
+    reasons: [String!]!
+}
 
   type ResponseStorageLocation {
     data: [StorageLocation]
@@ -45,6 +61,10 @@ const storageLocationType = gql`
     maxVolumeCm3: Float
     maxAreaCm2: Float
     maxWeightG: Float
+
+    supportsColdStorage: Boolean
+    supportsLightProtection: Boolean
+    supportsHazardous: Boolean
   }
 
   input StorageLocationWhereUniqueInput {
@@ -62,6 +82,10 @@ const storageLocationType = gql`
     maxVolumeCm3: Float
     maxAreaCm2: Float
     maxWeightG: Float
+
+    supportsColdStorage: Boolean
+    supportsLightProtection: Boolean
+    supportsHazardous: Boolean
   }
 
   input StorageLocationWhereFilterInput {
@@ -81,6 +105,10 @@ const storageLocationType = gql`
     maxAreaCm2: FloatFilter
     maxWeightG: FloatFilter
 
+    supportsColdStorage: BooleanFilter
+    supportsLightProtection: BooleanFilter
+    supportsHazardous: BooleanFilter
+
     createdAt: DateFilter
     updatedAt: DateFilter
   }
@@ -99,6 +127,9 @@ const storageLocationType = gql`
     maxVolumeCm3
     maxAreaCm2
     maxWeightG
+    supportsColdStorage
+    supportsLightProtection
+    supportsHazardous
     createdAt
     updatedAt
   }
