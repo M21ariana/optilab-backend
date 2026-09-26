@@ -4,6 +4,10 @@ import { getWhereInSamples } from "./transformations";
 import { recommendStorageLocationsForSample } from "../../storageRecommendation/service";
 
 const sampleResolvers: Resolver = {
+  // ======================================================
+  // RELATIONSHIPS
+  // ======================================================
+
   Sample: {
     laboratory: async (
       parent,
@@ -60,6 +64,10 @@ const sampleResolvers: Resolver = {
     },
   },
 
+  // ======================================================
+  // QUERIES
+  // ======================================================
+
   Query: {
     samples: async (
       parent,
@@ -74,30 +82,36 @@ const sampleResolvers: Resolver = {
           args.search
         );
 
-        const data = await db.sample.findMany({
-          where,
+        const data =
+          await db.sample.findMany({
+            where,
 
-          ...(args?.take
-            ? { take: args.take }
-            : {}),
+            ...(args?.take
+              ? {
+                  take: args.take,
+                }
+              : {}),
 
-          ...(args?.skip
-            ? { skip: args.skip }
-            : {}),
+            ...(args?.skip
+              ? {
+                  skip: args.skip,
+                }
+              : {}),
 
-          ...(args?.orderBy
-            ? {
-              orderBy: {
-                [args.orderBy.field]:
-                  args.orderBy.value,
-              },
-            }
-            : {}),
-        });
+            ...(args?.orderBy
+              ? {
+                  orderBy: {
+                    [args.orderBy.field]:
+                      args.orderBy.value,
+                  },
+                }
+              : {}),
+          });
 
-        const count = await db.sample.count({
-          where,
-        });
+        const count =
+          await db.sample.count({
+            where,
+          });
 
         return {
           data,
@@ -131,19 +145,28 @@ const sampleResolvers: Resolver = {
       });
     },
 
-    recommendedStorageLocations: async (
-      parent,
-      args,
-      { db }
-    ) => {
-      return await recommendStorageLocationsForSample(
-        db,
-        Number(args.sampleId)
-      );
-    },
+    recommendedStorageLocations:
+      async (
+        parent,
+        args,
+        { db }
+      ) => {
+        return await recommendStorageLocationsForSample(
+          db,
+          Number(args.sampleId)
+        );
+      },
   },
 
+  // ======================================================
+  // MUTATIONS
+  // ======================================================
+
   Mutation: {
+    // ====================================================
+    // CREATE SAMPLE
+    // ====================================================
+
     createSample: async (
       parent,
       args,
@@ -155,22 +178,27 @@ const sampleResolvers: Resolver = {
 
           ...(args.data.entryDate
             ? {
-              entryDate:
-                new Date(args.data.entryDate),
-            }
+                entryDate: new Date(
+                  args.data.entryDate
+                ),
+              }
             : {}),
 
           ...(args.data.expirationDate
             ? {
-              expirationDate:
-                new Date(
-                  args.data.expirationDate
-                ),
-            }
+                expirationDate:
+                  new Date(
+                    args.data.expirationDate
+                  ),
+              }
             : {}),
         },
       });
     },
+
+    // ====================================================
+    // UPDATE SAMPLE
+    // ====================================================
 
     updateSample: async (
       parent,
@@ -180,6 +208,19 @@ const sampleResolvers: Resolver = {
       const sampleId = Number(
         args.where.id
       );
+
+      // ----------------------------------------
+      // VALIDATE SAMPLE ID
+      // ----------------------------------------
+
+      if (
+        !Number.isInteger(sampleId) ||
+        sampleId <= 0
+      ) {
+        throw new Error(
+          "Invalid sample ID."
+        );
+      }
 
       // ----------------------------------------
       // GET CURRENT SAMPLE
@@ -208,7 +249,7 @@ const sampleResolvers: Resolver = {
       } = args.data;
 
       // ----------------------------------------
-      // DETECT LOCATION CHANGE
+      // LOCATION STATE
       // ----------------------------------------
 
       const hasLocationUpdate =
@@ -220,17 +261,44 @@ const sampleResolvers: Resolver = {
           ? sampleData.storageLocationId
           : currentSample.storageLocationId;
 
-      const locationChanged =
+      // ----------------------------------------
+      // INITIAL LOCATION ASSIGNMENT
+      //
+      // null -> location
+      //
+      // The sample has just been created and
+      // receives its first storage location.
+      // This is NOT a relocation.
+      // ----------------------------------------
+
+      const isInitialLocationAssignment =
         hasLocationUpdate &&
-        newLocationId !==
-        currentSample.storageLocationId;
+        currentSample.storageLocationId ===
+          null &&
+        newLocationId !== null &&
+        newLocationId !== undefined;
 
       // ----------------------------------------
-      // REQUIRE MOVEMENT REASON
+      // RELOCATION
+      //
+      // existing location -> different location
+      // ----------------------------------------
+
+      const isRelocation =
+        hasLocationUpdate &&
+        currentSample.storageLocationId !==
+          null &&
+        newLocationId !== null &&
+        newLocationId !== undefined &&
+        newLocationId !==
+          currentSample.storageLocationId;
+
+      // ----------------------------------------
+      // REQUIRE REASON ONLY FOR RELOCATION
       // ----------------------------------------
 
       if (
-        locationChanged &&
+        isRelocation &&
         !movementReason?.trim()
       ) {
         throw new Error(
@@ -259,29 +327,46 @@ const sampleResolvers: Resolver = {
 
                 ...(sampleData.entryDate
                   ? {
-                    entryDate:
-                      new Date(
-                        sampleData.entryDate
-                      ),
-                  }
+                      entryDate:
+                        new Date(
+                          sampleData.entryDate
+                        ),
+                    }
                   : {}),
 
                 ...(sampleData.expirationDate
                   ? {
-                    expirationDate:
-                      new Date(
-                        sampleData.expirationDate
-                      ),
-                  }
+                      expirationDate:
+                        new Date(
+                          sampleData.expirationDate
+                        ),
+                    }
                   : {}),
               },
             });
 
           // ------------------------------------
-          // CREATE MOVEMENT IF LOCATION CHANGED
+          // INITIAL LOCATION ASSIGNMENT
+          // ------------------------------------
+          //
+          // No SampleMovement is created here.
+          //
+          // The sample did not move from one
+          // storage location to another; it is
+          // simply receiving its first location.
           // ------------------------------------
 
-          if (locationChanged) {
+          if (
+            isInitialLocationAssignment
+          ) {
+            return updatedSample;
+          }
+
+          // ------------------------------------
+          // CREATE MOVEMENT FOR REAL RELOCATION
+          // ------------------------------------
+
+          if (isRelocation) {
             await tx.sampleMovement.create({
               data: {
                 sampleId,
@@ -290,7 +375,7 @@ const sampleResolvers: Resolver = {
                   currentSample.storageLocationId,
 
                 toLocationId:
-                  newLocationId ?? null,
+                  newLocationId,
 
                 movementType:
                   "RELOCATION",
@@ -309,6 +394,10 @@ const sampleResolvers: Resolver = {
       );
     },
 
+    // ====================================================
+    // UPSERT SAMPLE
+    // ====================================================
+
     upsertSample: async (
       parent,
       args,
@@ -319,18 +408,19 @@ const sampleResolvers: Resolver = {
 
         ...(args.data.entryDate
           ? {
-            entryDate:
-              new Date(args.data.entryDate),
-          }
+              entryDate: new Date(
+                args.data.entryDate
+              ),
+            }
           : {}),
 
         ...(args.data.expirationDate
           ? {
-            expirationDate:
-              new Date(
-                args.data.expirationDate
-              ),
-          }
+              expirationDate:
+                new Date(
+                  args.data.expirationDate
+                ),
+            }
           : {}),
       };
 
@@ -344,6 +434,10 @@ const sampleResolvers: Resolver = {
         update: data,
       });
     },
+
+    // ====================================================
+    // DELETE SAMPLE
+    // ====================================================
 
     deleteSample: async (
       parent,
