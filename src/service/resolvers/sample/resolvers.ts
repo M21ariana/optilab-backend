@@ -88,23 +88,23 @@ const sampleResolvers: Resolver = {
 
             ...(args?.take
               ? {
-                  take: args.take,
-                }
+                take: args.take,
+              }
               : {}),
 
             ...(args?.skip
               ? {
-                  skip: args.skip,
-                }
+                skip: args.skip,
+              }
               : {}),
 
             ...(args?.orderBy
               ? {
-                  orderBy: {
-                    [args.orderBy.field]:
-                      args.orderBy.value,
-                  },
-                }
+                orderBy: {
+                  [args.orderBy.field]:
+                    args.orderBy.value,
+                },
+              }
               : {}),
           });
 
@@ -178,19 +178,19 @@ const sampleResolvers: Resolver = {
 
           ...(args.data.entryDate
             ? {
-                entryDate: new Date(
-                  args.data.entryDate
-                ),
-              }
+              entryDate: new Date(
+                args.data.entryDate
+              ),
+            }
             : {}),
 
           ...(args.data.expirationDate
             ? {
-                expirationDate:
-                  new Date(
-                    args.data.expirationDate
-                  ),
-              }
+              expirationDate:
+                new Date(
+                  args.data.expirationDate
+                ),
+            }
             : {}),
         },
       });
@@ -274,12 +274,12 @@ const sampleResolvers: Resolver = {
       const isInitialLocationAssignment =
         hasLocationUpdate &&
         currentSample.storageLocationId ===
-          null &&
+        null &&
         newLocationId !== null &&
         newLocationId !== undefined;
 
       // ----------------------------------------
-      // RELOCATION
+      // TRANSFER
       //
       // existing location -> different location
       // ----------------------------------------
@@ -287,14 +287,14 @@ const sampleResolvers: Resolver = {
       const isRelocation =
         hasLocationUpdate &&
         currentSample.storageLocationId !==
-          null &&
+        null &&
         newLocationId !== null &&
         newLocationId !== undefined &&
         newLocationId !==
-          currentSample.storageLocationId;
+        currentSample.storageLocationId;
 
       // ----------------------------------------
-      // REQUIRE REASON ONLY FOR RELOCATION
+      // REQUIRE REASON ONLY FOR TRANSFER
       // ----------------------------------------
 
       if (
@@ -327,20 +327,20 @@ const sampleResolvers: Resolver = {
 
                 ...(sampleData.entryDate
                   ? {
-                      entryDate:
-                        new Date(
-                          sampleData.entryDate
-                        ),
-                    }
+                    entryDate:
+                      new Date(
+                        sampleData.entryDate
+                      ),
+                  }
                   : {}),
 
                 ...(sampleData.expirationDate
                   ? {
-                      expirationDate:
-                        new Date(
-                          sampleData.expirationDate
-                        ),
-                    }
+                    expirationDate:
+                      new Date(
+                        sampleData.expirationDate
+                      ),
+                  }
                   : {}),
               },
             });
@@ -363,7 +363,7 @@ const sampleResolvers: Resolver = {
           }
 
           // ------------------------------------
-          // CREATE MOVEMENT FOR REAL RELOCATION
+          // CREATE MOVEMENT FOR REAL TRANSFER
           // ------------------------------------
 
           if (isRelocation) {
@@ -378,7 +378,7 @@ const sampleResolvers: Resolver = {
                   newLocationId,
 
                 movementType:
-                  "RELOCATION",
+                  "TRANSFER",
 
                 notes:
                   movementReason.trim(),
@@ -388,6 +388,363 @@ const sampleResolvers: Resolver = {
               },
             });
           }
+
+          return updatedSample;
+        }
+      );
+    },
+
+    // ====================================================
+    // MOVE SAMPLE
+    // ====================================================
+
+    moveSample: async (
+      parent,
+      args,
+      { db, user }
+    ) => {
+      const sampleId = Number(
+        args.data.sampleId
+      );
+
+      const toLocationId = Number(
+        args.data.toLocationId
+      );
+
+      const notes = args.data.notes?.trim();
+
+      // ----------------------------------------
+      // VALIDATE INPUT
+      // ----------------------------------------
+
+      if (
+        !Number.isInteger(sampleId) ||
+        sampleId <= 0
+      ) {
+        throw new Error(
+          "Invalid sample ID."
+        );
+      }
+
+      if (
+        !Number.isInteger(toLocationId) ||
+        toLocationId <= 0
+      ) {
+        throw new Error(
+          "Invalid destination location ID."
+        );
+      }
+
+      if (!notes) {
+        throw new Error(
+          "A movement reason is required."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE AUTHENTICATED USER
+      // ----------------------------------------
+
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      // ----------------------------------------
+      // GET SAMPLE
+      // ----------------------------------------
+
+      const sample =
+        await db.sample.findUnique({
+          where: {
+            id: sampleId,
+          },
+
+          include: {
+            laboratory: true,
+          },
+        });
+
+      if (!sample) {
+        throw new Error(
+          "Sample not found."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ORGANIZATION ACCESS
+      // ----------------------------------------
+
+      if (
+        sample.laboratory.organizationId !==
+        user.organizationId
+      ) {
+        throw new Error(
+          "Sample not found or access denied."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE SAMPLE STATUS
+      // ----------------------------------------
+
+      if (sample.status !== "ACTIVE") {
+        throw new Error(
+          "Only active samples can be moved."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE CURRENT LOCATION
+      // ----------------------------------------
+
+      if (
+        sample.storageLocationId === null
+      ) {
+        throw new Error(
+          "The sample does not currently have a storage location."
+        );
+      }
+
+      if (
+        sample.storageLocationId ===
+        toLocationId
+      ) {
+        throw new Error(
+          "The sample is already stored in this location."
+        );
+      }
+
+      // ----------------------------------------
+      // GET DESTINATION LOCATION
+      // ----------------------------------------
+
+      const destinationLocation =
+        await db.storageLocation.findUnique({
+          where: {
+            id: toLocationId,
+          },
+        });
+
+      if (!destinationLocation) {
+        throw new Error(
+          "Destination storage location not found."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE SAME LABORATORY
+      // ----------------------------------------
+
+      if (
+        destinationLocation.laboratoryId !==
+        sample.laboratoryId
+      ) {
+        throw new Error(
+          "The destination location must belong to the same laboratory as the sample."
+        );
+      }
+
+      // ----------------------------------------
+      // TRANSACTION
+      // ----------------------------------------
+
+      return await db.$transaction(
+        async (tx) => {
+          const updatedSample =
+            await tx.sample.update({
+              where: {
+                id: sampleId,
+              },
+
+              data: {
+                storageLocationId:
+                  toLocationId,
+              },
+            });
+
+          await tx.sampleMovement.create({
+            data: {
+              sampleId,
+
+              fromLocationId:
+                sample.storageLocationId,
+
+              toLocationId,
+
+              movementType:
+                "TRANSFER",
+
+              notes,
+
+              performedByUserId:
+                user.id,
+            },
+          });
+
+          return updatedSample;
+        }
+      );
+    },
+
+    // ====================================================
+    // REMOVE SAMPLE
+    // ====================================================
+
+    removeSample: async (
+      parent,
+      args,
+      { db, user }
+    ) => {
+      const sampleId = Number(
+        args.data.sampleId
+      );
+
+      const notes = args.data.notes?.trim();
+
+      // ----------------------------------------
+      // VALIDATE INPUT
+      // ----------------------------------------
+
+      if (
+        !Number.isInteger(sampleId) ||
+        sampleId <= 0
+      ) {
+        throw new Error(
+          "Invalid sample ID."
+        );
+      }
+
+      if (!notes) {
+        throw new Error(
+          "A removal reason is required."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE AUTHENTICATED USER
+      // ----------------------------------------
+
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      // ----------------------------------------
+      // GET SAMPLE
+      // ----------------------------------------
+
+      const sample =
+        await db.sample.findUnique({
+          where: {
+            id: sampleId,
+          },
+
+          include: {
+            laboratory: true,
+          },
+        });
+
+      if (!sample) {
+        throw new Error(
+          "Sample not found."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ORGANIZATION ACCESS
+      // ----------------------------------------
+
+      if (
+        sample.laboratory.organizationId !==
+        user.organizationId
+      ) {
+        throw new Error(
+          "Sample not found or access denied."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE SAMPLE STATUS
+      // ----------------------------------------
+
+      if (sample.status !== "ACTIVE") {
+        throw new Error(
+          "Only active samples can be removed."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE CURRENT LOCATION
+      // ----------------------------------------
+
+      if (
+        sample.storageLocationId === null
+      ) {
+        throw new Error(
+          "The sample does not currently have a storage location."
+        );
+      }
+
+      const fromLocationId =
+        sample.storageLocationId;
+
+      // ----------------------------------------
+      // TRANSACTION
+      // ----------------------------------------
+
+      return await db.$transaction(
+        async (tx) => {
+          // ------------------------------------
+          // UPDATE SAMPLE
+          // ------------------------------------
+
+          const updatedSample =
+            await tx.sample.update({
+              where: {
+                id: sampleId,
+              },
+
+              data: {
+                storageLocationId: null,
+                status: "REMOVED",
+              },
+            });
+
+          // ------------------------------------
+          // CREATE EXIT MOVEMENT
+          // ------------------------------------
+
+          await tx.sampleMovement.create({
+            data: {
+              sampleId,
+
+              fromLocationId,
+
+              toLocationId: null,
+
+              movementType: "EXIT",
+
+              notes,
+
+              performedByUserId:
+                user.id,
+            },
+          });
 
           return updatedSample;
         }
@@ -408,19 +765,19 @@ const sampleResolvers: Resolver = {
 
         ...(args.data.entryDate
           ? {
-              entryDate: new Date(
-                args.data.entryDate
-              ),
-            }
+            entryDate: new Date(
+              args.data.entryDate
+            ),
+          }
           : {}),
 
         ...(args.data.expirationDate
           ? {
-              expirationDate:
-                new Date(
-                  args.data.expirationDate
-                ),
-            }
+            expirationDate:
+              new Date(
+                args.data.expirationDate
+              ),
+          }
           : {}),
       };
 

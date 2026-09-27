@@ -247,6 +247,7 @@ model UserAlert {
 
 enum SampleStatus {
   ACTIVE
+  REMOVED
   ARCHIVED
   DISCARDED
   EXPIRED

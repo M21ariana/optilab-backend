@@ -251,6 +251,9 @@ const generalTypes = gql`
       where: SampleMovementWhereUniqueInput!
     ): SampleMovement
 
+    moveSample(data: MoveSampleInput!): Sample!
+    removeSample(data: RemoveSampleInput!): Sample!
+
 
     # ------------------------------------------------------
     # Alert
@@ -466,7 +469,7 @@ const generalTypes = gql`
     dashboard(
       laboratoryId: Int
     ): Dashboard!
-    
+
   }
 `;
 

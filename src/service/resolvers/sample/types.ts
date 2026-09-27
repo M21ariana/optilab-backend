@@ -46,6 +46,8 @@ const sampleType = gql`
     error: String
   }
 
+  # -------------------------- Create --------------------------
+
   input SampleCreateInput {
     laboratoryId: Int!
     storageLocationId: Int
@@ -69,6 +71,8 @@ const sampleType = gql`
     requiresLightProtection: Boolean
     isHazardous: Boolean
   }
+
+  # -------------------------- Update --------------------------
 
   input SampleWhereUniqueInput {
     id: Int!
@@ -99,6 +103,23 @@ const sampleType = gql`
 
     movementReason: String
   }
+
+  # -------------------------- Move --------------------------
+
+  input MoveSampleInput {
+    sampleId: Int!
+    toLocationId: Int!
+    notes: String!
+  }
+
+  # -------------------------- Remove --------------------------
+
+  input RemoveSampleInput {
+    sampleId: Int!
+    notes: String!
+  }
+
+  # -------------------------- Filters --------------------------
 
   input SampleWhereFilterInput {
     AND: [SampleWhereFilterInput]
@@ -131,6 +152,15 @@ const sampleType = gql`
     isHazardous: BooleanFilter
   }
 
+  input EnumSampleStatusFilter {
+    equals: SampleStatus
+    in: [SampleStatus!]
+    notIn: [SampleStatus!]
+    not: SampleStatus
+  }
+
+  # -------------------------- Order --------------------------
+
   input OrderByInputSample {
     field: SampleOrderByField
     value: OrderByDirection
@@ -153,19 +183,15 @@ const sampleType = gql`
     updatedAt
   }
 
+  # -------------------------- Enums --------------------------
+
   enum SampleStatus {
     ACTIVE
+    REMOVED
     ARCHIVED
     DISCARDED
     EXPIRED
   }
-
-  input EnumSampleStatusFilter {
-  equals: SampleStatus
-  in: [SampleStatus!]
-  notIn: [SampleStatus!]
-  not: SampleStatus
-}
 `;
 
 export { sampleType };
