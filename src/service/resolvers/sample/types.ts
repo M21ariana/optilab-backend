@@ -114,6 +114,7 @@ const sampleType = gql`
     code: StringFilter
     description: StringFilter
 
+    status: EnumSampleStatusFilter
     weightG: FloatFilter
     volumeCm3: FloatFilter
     areaCm2: FloatFilter
@@ -158,6 +159,13 @@ const sampleType = gql`
     DISCARDED
     EXPIRED
   }
+
+  input EnumSampleStatusFilter {
+  equals: SampleStatus
+  in: [SampleStatus!]
+  notIn: [SampleStatus!]
+  not: SampleStatus
+}
 `;
 
 export { sampleType };
