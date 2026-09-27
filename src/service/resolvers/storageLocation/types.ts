@@ -16,6 +16,10 @@ const storageLocationType = gql`
     maxAreaCm2: Float
     maxWeightG: Float
 
+    sampleCount: Int!
+    usedAreaCm2: Float!
+    occupancy: Float!
+
     supportsColdStorage: Boolean!
     supportsLightProtection: Boolean!
     supportsHazardous: Boolean!
