@@ -458,6 +458,15 @@ const generalTypes = gql`
     userAlert(
       id: Int!
     ): UserAlert
+
+    # ------------------------------------------------------
+    # Dashboard
+    # ------------------------------------------------------
+
+    dashboard(
+      laboratoryId: Int
+    ): Dashboard!
+    
   }
 `;
 

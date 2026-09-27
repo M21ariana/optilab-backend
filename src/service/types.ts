@@ -14,6 +14,7 @@ interface Context {
   user?: {
     id: number;
     auth0Id: string;
+    organizationId: number | null;
   };
 }
 

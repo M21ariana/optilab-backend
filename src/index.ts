@@ -40,6 +40,9 @@ import { alertResolvers } from "./service/resolvers/alert/resolvers";
 import { userAlertType } from "./service/resolvers/userAlert/types";
 import { userAlertResolvers } from "./service/resolvers/userAlert/resolvers";
 
+import { dashboardType } from "./service/resolvers/dashboard/types";
+import { dashboardResolvers } from "./service/resolvers/dashboard/resolvers";
+
 const main = async () => {
   const db = await getDB();
 
@@ -84,6 +87,10 @@ const main = async () => {
         typeDefs: userAlertType,
         resolvers: userAlertResolvers,
       },
+      {
+        typeDefs: dashboardType,
+        resolvers: dashboardResolvers,
+      },
     ]),
 
     introspection: true,
@@ -102,7 +109,8 @@ const main = async () => {
           ? authorization[0]
           : authorization;
 
-        const origin = req.headers.origin;
+        const origin =
+          req.headers.origin;
 
         const ip =
           req.socket?.remoteAddress ||
@@ -112,29 +120,43 @@ const main = async () => {
           | {
               id: number;
               auth0Id: string;
+              organizationId: number | null;
             }
           | undefined;
 
         if (token) {
-          // Validate the Auth0 access token
+          // ----------------------------------------
+          // VALIDATE AUTH0 ACCESS TOKEN
+          // ----------------------------------------
+
           const identity =
-            await verifyAccessToken(token);
+            await verifyAccessToken(
+              token
+            );
 
           if (identity) {
-            // First, try to find an existing OptiLab user
+            // ----------------------------------------
+            // FIND EXISTING OPTILAB USER
+            // ----------------------------------------
+
             let databaseUser =
               await db.user.findUnique({
                 where: {
-                  auth0Id: identity.sub,
+                  auth0Id:
+                    identity.sub,
                 },
+
                 select: {
                   id: true,
                   auth0Id: true,
+                  organizationId: true,
                 },
               });
 
-            // If the Auth0 user does not exist
-            // in OptiLab yet, provision it.
+            // ----------------------------------------
+            // PROVISION USER IF NEEDED
+            // ----------------------------------------
+
             if (!databaseUser) {
               const auth0User =
                 await getAuth0UserInfo(
@@ -149,6 +171,7 @@ const main = async () => {
 
               // Make sure /userinfo belongs
               // to the same authenticated identity.
+
               if (
                 auth0User.sub !==
                 identity.sub
@@ -164,27 +187,35 @@ const main = async () => {
                 );
               }
 
-              // Do not automatically link an
-              // existing account by email.
+              // ----------------------------------------
+              // DO NOT LINK USERS AUTOMATICALLY BY EMAIL
+              // ----------------------------------------
+
               const existingUserByEmail =
                 await db.user.findUnique({
                   where: {
                     email:
                       auth0User.email,
                   },
+
                   select: {
                     id: true,
                     auth0Id: true,
                   },
                 });
 
-              if (existingUserByEmail) {
+              if (
+                existingUserByEmail
+              ) {
                 throw new Error(
                   "A user with this email already exists in OptiLab but is linked to a different authentication identity."
                 );
               }
 
-              // Create the OptiLab user
+              // ----------------------------------------
+              // CREATE OPTILAB USER
+              // ----------------------------------------
+
               databaseUser =
                 await db.user.create({
                   data: {
@@ -198,20 +229,26 @@ const main = async () => {
                       auth0User.name?.trim() ||
                       null,
 
-                    role: "TECHNICIAN",
+                    role:
+                      "TECHNICIAN",
 
-                    organizationId: null,
+                    organizationId:
+                      null,
                   },
 
                   select: {
                     id: true,
                     auth0Id: true,
+                    organizationId: true,
                   },
                 });
             }
 
-            // The authenticated OptiLab user
-            // is now available to resolvers.
+            // ----------------------------------------
+            // AUTHENTICATED USER AVAILABLE
+            // TO ALL RESOLVERS
+            // ----------------------------------------
+
             user = databaseUser;
           }
         }
@@ -227,8 +264,9 @@ const main = async () => {
 
       listen: {
         port:
-          Number(process.env.PORT) ||
-          4000,
+          Number(
+            process.env.PORT
+          ) || 4000,
       },
     }
   );
