@@ -28,20 +28,36 @@ const dashboardResolvers: Resolver = {
       // ==================================================
 
       const requestedLaboratoryId =
-        args.laboratoryId
+        args.laboratoryId !== undefined &&
+        args.laboratoryId !== null
           ? Number(args.laboratoryId)
           : null;
+
+      if (
+        requestedLaboratoryId !== null &&
+        (
+          !Number.isInteger(
+            requestedLaboratoryId
+          ) ||
+          requestedLaboratoryId <= 0
+        )
+      ) {
+        throw new Error(
+          "Invalid laboratory ID."
+        );
+      }
 
       let laboratoryId: number | null =
         null;
 
-      if (requestedLaboratoryId) {
+      if (requestedLaboratoryId !== null) {
         const laboratory =
           await db.laboratory.findFirst({
             where: {
               id: requestedLaboratoryId,
               organizationId,
             },
+
             select: {
               id: true,
             },
@@ -68,35 +84,35 @@ const dashboardResolvers: Resolver = {
       const sampleScopeWhere =
         laboratoryId !== null
           ? {
-            laboratoryId,
-          }
+              laboratoryId,
+            }
           : {
-            laboratory: {
-              organizationId,
-            },
-          };
+              laboratory: {
+                organizationId,
+              },
+            };
 
       const locationScopeWhere =
         laboratoryId !== null
           ? {
-            laboratoryId,
-          }
+              laboratoryId,
+            }
           : {
-            laboratory: {
-              organizationId,
-            },
-          };
+              laboratory: {
+                organizationId,
+              },
+            };
 
       const alertScopeWhere =
         laboratoryId !== null
           ? {
-            laboratoryId,
-          }
+              laboratoryId,
+            }
           : {
-            laboratory: {
-              organizationId,
-            },
-          };
+              laboratory: {
+                organizationId,
+              },
+            };
 
       // ==================================================
       // DATES
@@ -245,10 +261,10 @@ const dashboardResolvers: Resolver = {
         laboratoryId !== null
           ? Promise.resolve(1)
           : db.laboratory.count({
-            where: {
-              organizationId,
-            },
-          }),
+              where: {
+                organizationId,
+              },
+            }),
 
         // ----------------------------------------------
         // MATERIAL TYPES IN USE
@@ -291,25 +307,26 @@ const dashboardResolvers: Resolver = {
             sample
           ) =>
             total +
-            Number(sample.areaCm2),
+            Number(sample.areaCm2 ?? 0),
           0
         );
 
       const availableAreaCm2 =
         Math.max(
           totalAreaCm2 -
-          usedAreaCm2,
+            usedAreaCm2,
           0
         );
 
       const areaUsagePercentage =
         totalAreaCm2 > 0
           ? Math.min(
-            (usedAreaCm2 /
-              totalAreaCm2) *
-            100,
-            100
-          )
+              (
+                usedAreaCm2 /
+                totalAreaCm2
+              ) * 100,
+              100
+            )
           : 0;
 
       // ==================================================
@@ -321,6 +338,10 @@ const dashboardResolvers: Resolver = {
         recentMovements,
         recentAlerts,
       ] = await Promise.all([
+        // ----------------------------------------------
+        // RECENT SAMPLES
+        // ----------------------------------------------
+
         db.sample.findMany({
           where: sampleScopeWhere,
 
@@ -337,6 +358,10 @@ const dashboardResolvers: Resolver = {
             createdAt: true,
           },
         }),
+
+        // ----------------------------------------------
+        // RECENT MOVEMENTS
+        // ----------------------------------------------
 
         db.sampleMovement.findMany({
           where: {
@@ -375,6 +400,10 @@ const dashboardResolvers: Resolver = {
           },
         }),
 
+        // ----------------------------------------------
+        // RECENT ALERTS
+        // ----------------------------------------------
+
         db.alert.findMany({
           where: alertScopeWhere,
 
@@ -401,10 +430,15 @@ const dashboardResolvers: Resolver = {
         recentSamples.map(
           (sample) => ({
             id: `sample-${sample.id}`,
+
             type: "SAMPLE",
-            title: `Muestra ${sample.code} registrada`,
+
+            title:
+              `Muestra ${sample.code} registrada`,
+
             description:
               sample.name,
+
             createdAt:
               sample.createdAt ??
               new Date(0),
@@ -415,13 +449,15 @@ const dashboardResolvers: Resolver = {
         recentMovements.map(
           (movement) => ({
             id: `movement-${movement.id}`,
+
             type: "MOVEMENT",
 
-            title: `Muestra ${movement.sample.code} trasladada`,
+            title:
+              `Muestra ${movement.sample.code} trasladada`,
 
             description:
               movement.fromLocation &&
-                movement.toLocation
+              movement.toLocation
                 ? `Movida de ${movement.fromLocation.code} a ${movement.toLocation.code}.`
                 : movement.toLocation
                   ? `Asignada a ${movement.toLocation.code}.`
@@ -436,10 +472,15 @@ const dashboardResolvers: Resolver = {
         recentAlerts.map(
           (alert) => ({
             id: `alert-${alert.id}`,
+
             type: "ALERT",
-            title: `Alerta ${alert.severity.toLowerCase()}`,
+
+            title:
+              `Alerta ${alert.severity.toLowerCase()}`,
+
             description:
               alert.message,
+
             createdAt:
               alert.createdAt ??
               new Date(0),
@@ -488,6 +529,7 @@ const dashboardResolvers: Resolver = {
       };
     },
   },
+
   Mutation: {},
 };
 
