@@ -63,6 +63,8 @@ const sampleMovementType = gql`
     notes: StringFilter
     performedByUserId: IntFilter
     createdAt: DateFilter
+
+    sample: SampleWhereFilterInput
   }
 
   input OrderByInputSampleMovement {

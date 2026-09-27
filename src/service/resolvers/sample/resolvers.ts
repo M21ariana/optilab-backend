@@ -167,33 +167,162 @@ const sampleResolvers: Resolver = {
     // CREATE SAMPLE
     // ====================================================
 
+    // ====================================================
+    // CREATE SAMPLE
+    // ====================================================
+
     createSample: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.sample.create({
-        data: {
-          ...args.data,
+      // ----------------------------------------
+      // VALIDATE AUTHENTICATED USER
+      // ----------------------------------------
 
-          ...(args.data.entryDate
-            ? {
-              entryDate: new Date(
-                args.data.entryDate
-              ),
-            }
-            : {}),
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
 
-          ...(args.data.expirationDate
-            ? {
-              expirationDate:
-                new Date(
-                  args.data.expirationDate
-                ),
-            }
-            : {}),
-        },
-      });
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      const laboratoryId = Number(
+        args.data.laboratoryId
+      );
+
+      const storageLocationId =
+        args.data.storageLocationId !==
+          undefined &&
+          args.data.storageLocationId !== null
+          ? Number(
+            args.data.storageLocationId
+          )
+          : null;
+
+      // ----------------------------------------
+      // VALIDATE LABORATORY
+      // ----------------------------------------
+
+      const laboratory =
+        await db.laboratory.findUnique({
+          where: {
+            id: laboratoryId,
+          },
+        });
+
+      if (!laboratory) {
+        throw new Error(
+          "Laboratory not found."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ORGANIZATION ACCESS
+      // ----------------------------------------
+
+      if (
+        laboratory.organizationId !==
+        user.organizationId
+      ) {
+        throw new Error(
+          "Laboratory not found or access denied."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE INITIAL LOCATION
+      // ----------------------------------------
+
+      if (storageLocationId !== null) {
+        const storageLocation =
+          await db.storageLocation.findUnique({
+            where: {
+              id: storageLocationId,
+            },
+          });
+
+        if (!storageLocation) {
+          throw new Error(
+            "Storage location not found."
+          );
+        }
+
+        if (
+          storageLocation.laboratoryId !==
+          laboratoryId
+        ) {
+          throw new Error(
+            "The storage location must belong to the selected laboratory."
+          );
+        }
+      }
+
+      // ----------------------------------------
+      // CREATE SAMPLE + OPTIONAL ENTRY
+      // ----------------------------------------
+
+      return await db.$transaction(
+        async (tx) => {
+          const sample =
+            await tx.sample.create({
+              data: {
+                ...args.data,
+
+                storageLocationId,
+
+                entryDate:
+                  args.data.entryDate
+                    ? new Date(
+                      args.data.entryDate
+                    )
+                    : new Date(),
+
+                ...(args.data.expirationDate
+                  ? {
+                    expirationDate:
+                      new Date(
+                        args.data
+                          .expirationDate
+                      ),
+                  }
+                  : {}),
+              },
+            });
+
+          // --------------------------------------
+          // REGISTER INITIAL ENTRY
+          // --------------------------------------
+
+          if (storageLocationId !== null) {
+            await tx.sampleMovement.create({
+              data: {
+                sampleId: sample.id,
+
+                fromLocationId: null,
+
+                toLocationId:
+                  storageLocationId,
+
+                movementType: "ENTRY",
+
+                notes:
+                  "Sample assigned to storage location.",
+
+                performedByUserId:
+                  user.id,
+              },
+            });
+          }
+
+          return sample;
+        }
+      );
     },
 
     // ====================================================
@@ -231,6 +360,10 @@ const sampleResolvers: Resolver = {
           where: {
             id: sampleId,
           },
+
+          include: {
+            laboratory: true,
+          },
         });
 
       if (!currentSample) {
@@ -240,82 +373,155 @@ const sampleResolvers: Resolver = {
       }
 
       // ----------------------------------------
-      // SEPARATE AUXILIARY DATA
-      // ----------------------------------------
-
-      const {
-        movementReason,
-        ...sampleData
-      } = args.data;
-
-      // ----------------------------------------
-      // LOCATION STATE
+      // DETECT LOCATION CHANGE
       // ----------------------------------------
 
       const hasLocationUpdate =
-        sampleData.storageLocationId !==
+        args.data.storageLocationId !==
         undefined;
 
       const newLocationId =
-        hasLocationUpdate
-          ? sampleData.storageLocationId
-          : currentSample.storageLocationId;
+        args.data.storageLocationId;
 
-      // ----------------------------------------
-      // INITIAL LOCATION ASSIGNMENT
-      //
-      // null -> location
-      //
-      // The sample has just been created and
-      // receives its first storage location.
-      // This is NOT a relocation.
-      // ----------------------------------------
-
-      const isInitialLocationAssignment =
+      const isEntry =
         hasLocationUpdate &&
         currentSample.storageLocationId ===
         null &&
-        newLocationId !== null &&
-        newLocationId !== undefined;
+        newLocationId !== null;
 
-      // ----------------------------------------
-      // TRANSFER
-      //
-      // existing location -> different location
-      // ----------------------------------------
-
-      const isRelocation =
+      const isTransfer =
         hasLocationUpdate &&
         currentSample.storageLocationId !==
         null &&
         newLocationId !== null &&
-        newLocationId !== undefined &&
-        newLocationId !==
-        currentSample.storageLocationId;
+        currentSample.storageLocationId !==
+        newLocationId;
+
+      const isExit =
+        hasLocationUpdate &&
+        currentSample.storageLocationId !==
+        null &&
+        newLocationId === null;
 
       // ----------------------------------------
-      // REQUIRE REASON ONLY FOR TRANSFER
+      // BLOCK TRANSFER THROUGH UPDATE
       // ----------------------------------------
 
-      if (
-        isRelocation &&
-        !movementReason?.trim()
-      ) {
+      if (isTransfer) {
         throw new Error(
-          "A movement reason is required when changing the sample location."
+          "Use moveSample to change the sample storage location."
         );
       }
 
       // ----------------------------------------
-      // TRANSACTION
+      // BLOCK EXIT THROUGH UPDATE
+      // ----------------------------------------
+
+      if (isExit) {
+        throw new Error(
+          "Use removeSample to remove the sample from storage."
+        );
+      }
+
+      // ----------------------------------------
+      // NORMAL UPDATE
+      // ----------------------------------------
+
+      if (!isEntry) {
+        return await db.sample.update({
+          where: {
+            id: sampleId,
+          },
+
+          data: {
+            ...args.data,
+
+            ...(args.data.entryDate
+              ? {
+                entryDate: new Date(
+                  args.data.entryDate
+                ),
+              }
+              : {}),
+
+            ...(args.data.expirationDate
+              ? {
+                expirationDate:
+                  new Date(
+                    args.data.expirationDate
+                  ),
+              }
+              : {}),
+          },
+        });
+      }
+
+      // ----------------------------------------
+      // ENTRY REQUIRES AUTHENTICATED USER
+      // ----------------------------------------
+
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ORGANIZATION ACCESS
+      // ----------------------------------------
+
+      if (
+        currentSample.laboratory
+          .organizationId !==
+        user.organizationId
+      ) {
+        throw new Error(
+          "Sample not found or access denied."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE DESTINATION LOCATION
+      // ----------------------------------------
+
+      const destinationLocation =
+        await db.storageLocation.findUnique({
+          where: {
+            id: Number(newLocationId),
+          },
+        });
+
+      if (!destinationLocation) {
+        throw new Error(
+          "Destination storage location not found."
+        );
+      }
+
+      // ----------------------------------------
+      // LOCATION MUST BELONG TO SAME LAB
+      // ----------------------------------------
+
+      if (
+        destinationLocation.laboratoryId !==
+        currentSample.laboratoryId
+      ) {
+        throw new Error(
+          "The destination location must belong to the same laboratory as the sample."
+        );
+      }
+
+      // ----------------------------------------
+      // UPDATE SAMPLE + CREATE ENTRY
       // ----------------------------------------
 
       return await db.$transaction(
         async (tx) => {
-          // ------------------------------------
-          // UPDATE SAMPLE
-          // ------------------------------------
-
           const updatedSample =
             await tx.sample.update({
               where: {
@@ -323,71 +529,47 @@ const sampleResolvers: Resolver = {
               },
 
               data: {
-                ...sampleData,
+                ...args.data,
 
-                ...(sampleData.entryDate
+                ...(args.data.entryDate
                   ? {
-                    entryDate:
-                      new Date(
-                        sampleData.entryDate
-                      ),
+                    entryDate: new Date(
+                      args.data.entryDate
+                    ),
                   }
                   : {}),
 
-                ...(sampleData.expirationDate
+                ...(args.data.expirationDate
                   ? {
                     expirationDate:
                       new Date(
-                        sampleData.expirationDate
+                        args.data
+                          .expirationDate
                       ),
                   }
                   : {}),
               },
             });
 
-          // ------------------------------------
-          // INITIAL LOCATION ASSIGNMENT
-          // ------------------------------------
-          //
-          // No SampleMovement is created here.
-          //
-          // The sample did not move from one
-          // storage location to another; it is
-          // simply receiving its first location.
-          // ------------------------------------
+          await tx.sampleMovement.create({
+            data: {
+              sampleId,
 
-          if (
-            isInitialLocationAssignment
-          ) {
-            return updatedSample;
-          }
+              fromLocationId: null,
 
-          // ------------------------------------
-          // CREATE MOVEMENT FOR REAL TRANSFER
-          // ------------------------------------
+              toLocationId: Number(
+                newLocationId
+              ),
 
-          if (isRelocation) {
-            await tx.sampleMovement.create({
-              data: {
-                sampleId,
+              movementType: "ENTRY",
 
-                fromLocationId:
-                  currentSample.storageLocationId,
+              notes:
+                "Sample assigned to storage location.",
 
-                toLocationId:
-                  newLocationId,
-
-                movementType:
-                  "TRANSFER",
-
-                notes:
-                  movementReason.trim(),
-
-                performedByUserId:
-                  user?.id ?? null,
-              },
-            });
-          }
+              performedByUserId:
+                user.id,
+            },
+          });
 
           return updatedSample;
         }

@@ -61,38 +61,102 @@ const sampleMovementResolvers: Resolver = {
     sampleMovements: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
       let status = 200;
 
       try {
-        const where =
+        // ----------------------------------------
+        // AUTH
+        // ----------------------------------------
+
+        if (!user) {
+          throw new Error(
+            "Authentication required."
+          );
+        }
+
+        if (!user.organizationId) {
+          throw new Error(
+            "The current user does not belong to an organization."
+          );
+        }
+
+        // ----------------------------------------
+        // USER FILTERS
+        // ----------------------------------------
+
+        const requestedWhere =
           getWhereInSampleMovements(
             args.where || {},
             args.search
           );
+
+        // ----------------------------------------
+        // ORGANIZATION FILTER
+        // ----------------------------------------
+        //
+        // Every movement must belong to a sample
+        // whose laboratory belongs to the current
+        // user's organization.
+        //
+        // SampleMovement
+        //      ↓
+        // Sample
+        //      ↓
+        // Laboratory
+        //      ↓
+        // Organization
+        // ----------------------------------------
+
+        const where = {
+          AND: [
+            requestedWhere,
+
+            {
+              sample: {
+                laboratory: {
+                  organizationId:
+                    user.organizationId,
+                },
+              },
+            },
+          ],
+        };
+
+        // ----------------------------------------
+        // DATA
+        // ----------------------------------------
 
         const data =
           await db.sampleMovement.findMany({
             where,
 
             ...(args?.take
-              ? { take: args.take }
+              ? {
+                take: args.take,
+              }
               : {}),
 
             ...(args?.skip
-              ? { skip: args.skip }
+              ? {
+                skip: args.skip,
+              }
               : {}),
 
             ...(args?.orderBy
               ? {
-                  orderBy: {
-                    [args.orderBy.field]:
-                      args.orderBy.value,
-                  },
-                }
+                orderBy: {
+                  [args.orderBy.field]:
+                    args.orderBy.value,
+                },
+              }
               : {}),
           });
+
+        // ----------------------------------------
+        // COUNT
+        // ----------------------------------------
 
         const count =
           await db.sampleMovement.count({
@@ -103,6 +167,7 @@ const sampleMovementResolvers: Resolver = {
           data,
           count,
           status,
+          error: null,
         };
       } catch (error) {
         status = 500;
@@ -119,14 +184,33 @@ const sampleMovementResolvers: Resolver = {
       }
     },
 
-    sampleMovement: async (
+    ssampleMovement: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.sampleMovement.findUnique({
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      return await db.sampleMovement.findFirst({
         where: {
           id: Number(args.id),
+
+          sample: {
+            laboratory: {
+              organizationId:
+                user.organizationId,
+            },
+          },
         },
       });
     },

@@ -100,8 +100,6 @@ const sampleType = gql`
     requiresColdStorage: Boolean
     requiresLightProtection: Boolean
     isHazardous: Boolean
-
-    movementReason: String
   }
 
   # -------------------------- Move --------------------------
@@ -150,6 +148,8 @@ const sampleType = gql`
     requiresColdStorage: BooleanFilter
     requiresLightProtection: BooleanFilter
     isHazardous: BooleanFilter
+
+    organization: OrganizationWhereFilterInput
   }
 
   input EnumSampleStatusFilter {
