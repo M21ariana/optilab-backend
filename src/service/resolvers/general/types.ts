@@ -470,6 +470,7 @@ const generalTypes = gql`
       laboratoryId: Int
     ): Dashboard!
 
+    reportsDashboard: ReportsDashboard!
   }
 `;
 

@@ -43,6 +43,9 @@ import { userAlertResolvers } from "./service/resolvers/userAlert/resolvers";
 import { dashboardType } from "./service/resolvers/dashboard/types";
 import { dashboardResolvers } from "./service/resolvers/dashboard/resolvers";
 
+import { reportResolvers } from "./service/resolvers/reports/resolvers";
+import { reportType } from "./service/resolvers/reports/types";
+
 const main = async () => {
   const db = await getDB();
 
@@ -90,6 +93,10 @@ const main = async () => {
       {
         typeDefs: dashboardType,
         resolvers: dashboardResolvers,
+      },
+      {
+        typeDefs: reportType,
+        resolvers: reportResolvers,
       },
     ]),
 
