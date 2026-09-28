@@ -2,6 +2,10 @@ import { Resolver } from "../../types";
 import { sampleDataLoader } from "./dataLoaders";
 import { getWhereInSamples } from "./transformations";
 import { recommendStorageLocationsForSample } from "../../storageRecommendation/service";
+import {
+  syncSampleAlerts,
+  syncHighOccupancyAlert,
+} from "../../alertManagement/service";
 
 const sampleResolvers: Resolver = {
   // ======================================================
@@ -72,15 +76,64 @@ const sampleResolvers: Resolver = {
     samples: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
       let status = 200;
 
       try {
-        const where = getWhereInSamples(
-          args.where || {},
-          args.search
-        );
+        // ----------------------------------------
+        // AUTH
+        // ----------------------------------------
+
+        if (!user) {
+          throw new Error(
+            "Authentication required."
+          );
+        }
+
+        if (!user.organizationId) {
+          throw new Error(
+            "The current user does not belong to an organization."
+          );
+        }
+
+        // ----------------------------------------
+        // USER FILTERS
+        // ----------------------------------------
+
+        const requestedWhere =
+          getWhereInSamples(
+            args.where || {},
+            args.search
+          );
+
+        // ----------------------------------------
+        // ORGANIZATION FILTER
+        // ----------------------------------------
+        //
+        // Sample
+        //    ↓
+        // Laboratory
+        //    ↓
+        // Organization
+        // ----------------------------------------
+
+        const where = {
+          AND: [
+            requestedWhere,
+
+            {
+              laboratory: {
+                organizationId:
+                  user.organizationId,
+              },
+            },
+          ],
+        };
+
+        // ----------------------------------------
+        // DATA
+        // ----------------------------------------
 
         const data =
           await db.sample.findMany({
@@ -108,6 +161,10 @@ const sampleResolvers: Resolver = {
               : {}),
           });
 
+        // ----------------------------------------
+        // COUNT
+        // ----------------------------------------
+
         const count =
           await db.sample.count({
             where,
@@ -117,6 +174,7 @@ const sampleResolvers: Resolver = {
           data,
           count,
           status,
+          error: null,
         };
       } catch (error) {
         status = 500;
@@ -136,11 +194,58 @@ const sampleResolvers: Resolver = {
     sample: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.sample.findUnique({
+      // ----------------------------------------
+      // AUTH
+      // ----------------------------------------
+
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ID
+      // ----------------------------------------
+
+      const sampleId = Number(args.id);
+
+      if (
+        !Number.isInteger(sampleId) ||
+        sampleId <= 0
+      ) {
+        throw new Error(
+          "Invalid sample ID."
+        );
+      }
+
+      // ----------------------------------------
+      // GET SAMPLE
+      // ----------------------------------------
+      //
+      // Sample
+      //    ↓
+      // Laboratory
+      //    ↓
+      // Organization
+      // ----------------------------------------
+
+      return await db.sample.findFirst({
         where: {
-          id: Number(args.id),
+          id: sampleId,
+
+          laboratory: {
+            organizationId:
+              user.organizationId,
+          },
         },
       });
     },
@@ -320,6 +425,26 @@ const sampleResolvers: Resolver = {
             });
           }
 
+          // --------------------------------------
+          // SYNC SAMPLE ALERTS
+          // --------------------------------------
+
+          await syncSampleAlerts(
+            tx,
+            sample.id
+          );
+
+          // --------------------------------------
+          // SYNC LOCATION OCCUPANCY ALERT
+          // --------------------------------------
+
+          if (storageLocationId !== null) {
+            await syncHighOccupancyAlert(
+              tx,
+              storageLocationId
+            );
+          }
+
           return sample;
         }
       );
@@ -428,32 +553,65 @@ const sampleResolvers: Resolver = {
       // ----------------------------------------
 
       if (!isEntry) {
-        return await db.sample.update({
-          where: {
-            id: sampleId,
-          },
+        return await db.$transaction(
+          async (tx) => {
+            const updatedSample =
+              await tx.sample.update({
+                where: {
+                  id: sampleId,
+                },
 
-          data: {
-            ...args.data,
+                data: {
+                  ...args.data,
 
-            ...(args.data.entryDate
-              ? {
-                entryDate: new Date(
-                  args.data.entryDate
-                ),
-              }
-              : {}),
+                  ...(args.data.entryDate
+                    ? {
+                      entryDate:
+                        new Date(
+                          args.data
+                            .entryDate
+                        ),
+                    }
+                    : {}),
 
-            ...(args.data.expirationDate
-              ? {
-                expirationDate:
-                  new Date(
-                    args.data.expirationDate
-                  ),
-              }
-              : {}),
-          },
-        });
+                  ...(args.data.expirationDate
+                    ? {
+                      expirationDate:
+                        new Date(
+                          args.data
+                            .expirationDate
+                        ),
+                    }
+                    : {}),
+                },
+              });
+
+            // --------------------------------------
+            // RE-EVALUATE SAMPLE ALERTS
+            // --------------------------------------
+
+            await syncSampleAlerts(
+              tx,
+              sampleId
+            );
+
+            // --------------------------------------
+            // RE-EVALUATE CURRENT LOCATION
+            // --------------------------------------
+
+            if (
+              updatedSample.storageLocationId !==
+              null
+            ) {
+              await syncHighOccupancyAlert(
+                tx,
+                updatedSample.storageLocationId
+              );
+            }
+
+            return updatedSample;
+          }
+        );
       }
 
       // ----------------------------------------
@@ -533,9 +691,11 @@ const sampleResolvers: Resolver = {
 
                 ...(args.data.entryDate
                   ? {
-                    entryDate: new Date(
-                      args.data.entryDate
-                    ),
+                    entryDate:
+                      new Date(
+                        args.data
+                          .entryDate
+                      ),
                   }
                   : {}),
 
@@ -550,6 +710,10 @@ const sampleResolvers: Resolver = {
                   : {}),
               },
             });
+
+          // --------------------------------------
+          // REGISTER ENTRY
+          // --------------------------------------
 
           await tx.sampleMovement.create({
             data: {
@@ -570,6 +734,24 @@ const sampleResolvers: Resolver = {
                 user.id,
             },
           });
+
+          // --------------------------------------
+          // RE-EVALUATE SAMPLE ALERTS
+          // --------------------------------------
+
+          await syncSampleAlerts(
+            tx,
+            sampleId
+          );
+
+          // --------------------------------------
+          // RE-EVALUATE DESTINATION OCCUPANCY
+          // --------------------------------------
+
+          await syncHighOccupancyAlert(
+            tx,
+            Number(newLocationId)
+          );
 
           return updatedSample;
         }
@@ -704,6 +886,10 @@ const sampleResolvers: Resolver = {
         );
       }
 
+      // Save the origin before updating the sample.
+      const fromLocationId =
+        sample.storageLocationId;
+
       // ----------------------------------------
       // GET DESTINATION LOCATION
       // ----------------------------------------
@@ -740,6 +926,10 @@ const sampleResolvers: Resolver = {
 
       return await db.$transaction(
         async (tx) => {
+          // --------------------------------------
+          // UPDATE SAMPLE LOCATION
+          // --------------------------------------
+
           const updatedSample =
             await tx.sample.update({
               where: {
@@ -752,12 +942,15 @@ const sampleResolvers: Resolver = {
               },
             });
 
+          // --------------------------------------
+          // REGISTER MOVEMENT
+          // --------------------------------------
+
           await tx.sampleMovement.create({
             data: {
               sampleId,
 
-              fromLocationId:
-                sample.storageLocationId,
+              fromLocationId,
 
               toLocationId,
 
@@ -770,6 +963,39 @@ const sampleResolvers: Resolver = {
                 user.id,
             },
           });
+
+          // --------------------------------------
+          // RE-EVALUATE SAMPLE ALERTS
+          // --------------------------------------
+          // Important because the destination may
+          // have different storage capabilities.
+
+          await syncSampleAlerts(
+            tx,
+            sampleId
+          );
+
+          // --------------------------------------
+          // RE-EVALUATE ORIGIN OCCUPANCY
+          // --------------------------------------
+          // The sample left this location, so its
+          // occupied area decreased.
+
+          await syncHighOccupancyAlert(
+            tx,
+            fromLocationId
+          );
+
+          // --------------------------------------
+          // RE-EVALUATE DESTINATION OCCUPANCY
+          // --------------------------------------
+          // The sample entered this location, so
+          // its occupied area increased.
+
+          await syncHighOccupancyAlert(
+            tx,
+            toLocationId
+          );
 
           return updatedSample;
         }
@@ -928,6 +1154,30 @@ const sampleResolvers: Resolver = {
             },
           });
 
+          // ------------------------------------
+          // RE-EVALUATE SAMPLE ALERTS
+          // ------------------------------------
+          // Since the sample is now REMOVED,
+          // its active sample alerts should be
+          // resolved.
+
+          await syncSampleAlerts(
+            tx,
+            sampleId
+          );
+
+          // ------------------------------------
+          // RE-EVALUATE LOCATION OCCUPANCY
+          // ------------------------------------
+          // The sample has left the location,
+          // therefore its occupied area has
+          // decreased.
+
+          await syncHighOccupancyAlert(
+            tx,
+            fromLocationId
+          );
+
           return updatedSample;
         }
       );
@@ -981,13 +1231,111 @@ const sampleResolvers: Resolver = {
     deleteSample: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.sample.delete({
-        where: {
-          id: Number(args.where.id),
-        },
-      });
+      const sampleId = Number(
+        args.where.id
+      );
+
+      // ----------------------------------------
+      // VALIDATE INPUT
+      // ----------------------------------------
+
+      if (
+        !Number.isInteger(sampleId) ||
+        sampleId <= 0
+      ) {
+        throw new Error(
+          "Invalid sample ID."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE AUTHENTICATED USER
+      // ----------------------------------------
+
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      // ----------------------------------------
+      // GET SAMPLE
+      // ----------------------------------------
+
+      const sample =
+        await db.sample.findUnique({
+          where: {
+            id: sampleId,
+          },
+
+          include: {
+            laboratory: true,
+          },
+        });
+
+      if (!sample) {
+        throw new Error(
+          "Sample not found."
+        );
+      }
+
+      // ----------------------------------------
+      // VALIDATE ORGANIZATION ACCESS
+      // ----------------------------------------
+
+      if (
+        sample.laboratory.organizationId !==
+        user.organizationId
+      ) {
+        throw new Error(
+          "Sample not found or access denied."
+        );
+      }
+
+      // ----------------------------------------
+      // SAVE CURRENT LOCATION
+      // ----------------------------------------
+
+      const storageLocationId =
+        sample.storageLocationId;
+
+      // ----------------------------------------
+      // DELETE SAMPLE
+      // ----------------------------------------
+
+      return await db.$transaction(
+        async (tx) => {
+          const deletedSample =
+            await tx.sample.delete({
+              where: {
+                id: sampleId,
+              },
+            });
+
+          // ------------------------------------
+          // RE-EVALUATE LOCATION OCCUPANCY
+          // ------------------------------------
+          // Only necessary if the sample was
+          // currently assigned to a location.
+
+          if (storageLocationId !== null) {
+            await syncHighOccupancyAlert(
+              tx,
+              storageLocationId
+            );
+          }
+
+          return deletedSample;
+        }
+      );
     },
   },
 };
