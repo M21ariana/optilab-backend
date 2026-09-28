@@ -61,45 +61,121 @@ const alertResolvers: Resolver = {
     alerts: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
       let status = 200;
 
       try {
-        const where = getWhereInAlerts(
-          args.where || {},
-          args.search
-        );
+        // ----------------------------------------
+        // AUTH
+        // ----------------------------------------
 
-        const data = await db.alert.findMany({
-          where,
+        if (!user) {
+          throw new Error(
+            "Authentication required."
+          );
+        }
 
-          ...(args?.take
-            ? { take: args.take }
-            : {}),
+        if (!user.organizationId) {
+          throw new Error(
+            "The current user does not belong to an organization."
+          );
+        }
 
-          ...(args?.skip
-            ? { skip: args.skip }
-            : {}),
+        // ----------------------------------------
+        // USER FILTERS
+        // ----------------------------------------
 
-          ...(args?.orderBy
-            ? {
+        const requestedWhere =
+          getWhereInAlerts(
+            args.where || {},
+            args.search
+          );
+
+        // ----------------------------------------
+        // ORGANIZATION FILTER
+        // ----------------------------------------
+
+        const organizationFilter = {
+          OR: [
+            {
+              laboratory: {
+                organizationId:
+                  user.organizationId,
+              },
+            },
+
+            {
+              storageLocation: {
+                laboratory: {
+                  organizationId:
+                    user.organizationId,
+                },
+              },
+            },
+
+            {
+              sample: {
+                laboratory: {
+                  organizationId:
+                    user.organizationId,
+                },
+              },
+            },
+          ],
+        };
+
+        const where = {
+          AND: [
+            requestedWhere,
+            organizationFilter,
+          ],
+        };
+
+        // ----------------------------------------
+        // DATA
+        // ----------------------------------------
+
+        const data =
+          await db.alert.findMany({
+            where,
+
+            ...(args?.take
+              ? {
+                take: args.take,
+              }
+              : {}),
+
+            ...(args?.skip
+              ? {
+                skip: args.skip,
+              }
+              : {}),
+
+            ...(args?.orderBy
+              ? {
                 orderBy: {
                   [args.orderBy.field]:
                     args.orderBy.value,
                 },
               }
-            : {}),
-        });
+              : {}),
+          });
 
-        const count = await db.alert.count({
-          where,
-        });
+        // ----------------------------------------
+        // COUNT
+        // ----------------------------------------
+
+        const count =
+          await db.alert.count({
+            where,
+          });
 
         return {
           data,
           count,
           status,
+          error: null,
         };
       } catch (error) {
         status = 500;
@@ -119,11 +195,50 @@ const alertResolvers: Resolver = {
     alert: async (
       parent,
       args,
-      { db }
+      { db, user }
     ) => {
-      return await db.alert.findUnique({
+      if (!user) {
+        throw new Error(
+          "Authentication required."
+        );
+      }
+
+      if (!user.organizationId) {
+        throw new Error(
+          "The current user does not belong to an organization."
+        );
+      }
+
+      return await db.alert.findFirst({
         where: {
           id: Number(args.id),
+
+          OR: [
+            {
+              laboratory: {
+                organizationId:
+                  user.organizationId,
+              },
+            },
+
+            {
+              storageLocation: {
+                laboratory: {
+                  organizationId:
+                    user.organizationId,
+                },
+              },
+            },
+
+            {
+              sample: {
+                laboratory: {
+                  organizationId:
+                    user.organizationId,
+                },
+              },
+            },
+          ],
         },
       });
     },
@@ -141,9 +256,9 @@ const alertResolvers: Resolver = {
 
           ...(args.data.resolvedAt
             ? {
-                resolvedAt:
-                  new Date(args.data.resolvedAt),
-              }
+              resolvedAt:
+                new Date(args.data.resolvedAt),
+            }
             : {}),
         },
       });
@@ -164,9 +279,9 @@ const alertResolvers: Resolver = {
 
           ...(args.data.resolvedAt
             ? {
-                resolvedAt:
-                  new Date(args.data.resolvedAt),
-              }
+              resolvedAt:
+                new Date(args.data.resolvedAt),
+            }
             : {}),
         },
       });
@@ -182,9 +297,9 @@ const alertResolvers: Resolver = {
 
         ...(args.data.resolvedAt
           ? {
-              resolvedAt:
-                new Date(args.data.resolvedAt),
-            }
+            resolvedAt:
+              new Date(args.data.resolvedAt),
+          }
           : {}),
       };
 
